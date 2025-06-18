@@ -35,7 +35,7 @@ services:
     build: .
     ports:
       - "7860:7860"
-    volumns:
+    volumes:
       - chat_data:/app/data
     environment:
       - LLAMA_URL=http://llama-container:11434/v1/chat/completions

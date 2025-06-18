@@ -12,47 +12,13 @@ current_session_id = None
 def generate_session_id():
     return f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-def calculate_chatbot_height(history):
-    """Calculate dynamic height based on number of messages"""
-    if not history:
-        return 150  # Minimum height when empty
-    
-    # Base height + height per message pair (user + assistant)
-    base_height = 150
-    height_per_message = 80
-    max_height = 600
-    
-    message_count = len(history)
-    calculated_height = base_height + (message_count * height_per_message)
-    
-    return min(calculated_height, max_height)
-
 def get_session_title(history):
     """Generate a title for the chat session based on first message"""
     if history and len(history) > 0:
         first_message = history[0][0]
-        # Truncate to first 40 characters for display
-        return first_message[:40] + "..." if len(first_message) > 40 else first_message
+        # Truncate to first 30 characters for display
+        return first_message[:30] + "..." if len(first_message) > 30 else first_message
     return "New Chat"
-
-def format_timestamp(timestamp):
-    """Format timestamp for display"""
-    now = datetime.now()
-    diff = now - timestamp
-    
-    if diff.days == 0:
-        if diff.seconds < 3600:  # Less than 1 hour
-            minutes = diff.seconds // 60
-            return f"{minutes}m ago" if minutes > 0 else "Just now"
-        else:  # Less than 24 hours
-            hours = diff.seconds // 3600
-            return f"{hours}h ago"
-    elif diff.days == 1:
-        return "Yesterday"
-    elif diff.days < 7:
-        return f"{diff.days}d ago"
-    else:
-        return timestamp.strftime("%m/%d")
 
 def chat_with_llama(message, history, session_id):
     global chat_sessions, current_session_id
@@ -85,23 +51,23 @@ def chat_with_llama(message, history, session_id):
             "timestamp": datetime.now()
         }
     
-    # Update chat list
-    chat_list_html = generate_chat_list_html()
-    new_height = calculate_chatbot_height(history)
+    # Update chat list and return current session title as selected
+    chat_list = update_chat_list()
+    current_selection = get_session_title(history) if session_id else None
     
-    return history, "", gr.update(value=chat_list_html), gr.update(height=new_height)
+    return history, "", gr.update(choices=chat_list, value=current_selection)
 
 def new_chat():
     """Start a new chat session"""
     global current_session_id
     current_session_id = generate_session_id()
-    chat_list_html = generate_chat_list_html()
-    return [], current_session_id, gr.update(value=chat_list_html), gr.update(height=150)
+    chat_list = update_chat_list()
+    return [], current_session_id, gr.update(choices=chat_list, value=None)
 
-def generate_chat_list_html():
-    """Generate HTML for the chat list in Claude style"""
+def update_chat_list():
+    """Return list of chat sessions for the dropdown"""
     if not chat_sessions:
-        return "<div class='chat-list-empty'>No conversations yet</div>"
+        return []
     
     # Sort by timestamp, most recent first
     sorted_sessions = sorted(
@@ -110,36 +76,27 @@ def generate_chat_list_html():
         reverse=True
     )
     
-    html_items = []
-    for session_id, data in sorted_sessions:
-        title = data['title']
-        timestamp = format_timestamp(data['timestamp'])
-        is_current = session_id == current_session_id
-        
-        active_class = "active" if is_current else ""
-        
-        html_items.append(f"""
-        <div class="chat-item {active_class}" data-session-id="{session_id}">
-            <div class="chat-title">{title}</div>
-            <div class="chat-timestamp">{timestamp}</div>
-        </div>
-        """)
-    
-    return f'<div class="chat-list">{"".join(html_items)}</div>'
+    # Return only the titles, not the session IDs
+    return [data['title'] for session_id, data in sorted_sessions]
 
-def load_chat_from_click(session_id):
-    """Load a chat session when clicked"""
+def load_chat_session(selected_chat, current_session):
+    """Load a selected chat session"""
     global current_session_id
     
-    if not session_id or session_id not in chat_sessions:
-        return [], None, gr.update(height=150), gr.update()
+    if not selected_chat or selected_chat == "":
+        return [], current_session
     
-    current_session_id = session_id
-    history = chat_sessions[session_id]["history"]
-    new_height = calculate_chatbot_height(history)
-    chat_list_html = generate_chat_list_html()
+    try:
+        # Find the session by matching the title
+        for session_id, data in chat_sessions.items():
+            if data['title'] == selected_chat:
+                current_session_id = session_id
+                history = data["history"]
+                return history, session_id
+    except Exception as e:
+        print(f"Error loading chat session: {e}")
     
-    return history, session_id, gr.update(height=new_height), gr.update(value=chat_list_html)
+    return [], current_session
 
 def toggle_sidebar():
     """Toggle the visibility of the sidebar"""
@@ -149,46 +106,28 @@ def hide_sidebar():
     """Hide the sidebar"""
     return gr.update(visible=False), gr.update(visible=True)
 
-# Custom CSS for Claude-style interface
+# Custom CSS for better styling
 custom_css = """
 footer {display: none !important}
-
 .sidebar {
-    border-right: 1px solid #374151;
+    border-right: 1px solid #e5e5e5;
     height: 100vh;
-    padding: 0;
-    min-width: 180px;
-    max-width: 180px;
-    background-color: rgb(6 16 30);
+    padding: 1rem;
+    min-width: 300px;
+    max-width: 300px;
 }
-
-.sidebar-header {
-    padding: 16px;
-    border-bottom: 1px solid #374151;
-    background-color: rgb(6 16 30);
+.chat-list {
+    max-height: 400px;
+    overflow-y: auto;
 }
-
 .toggle-btn {
-    margin: 0 0 16px 0;
-    width: 100%;
-    height: 36px;
-    font-size: 14px;
-    font-weight: 500;
-    background-color: #374151 !important;
-    color: #f9fafb !important;
-    border: 1px solid #4b5563 !important;
+    margin: 0 auto 15px auto;
+    width: 30px;
+    height: 30px;
+    min-width: 30px !important;
+    padding: 0 !important;
+    display: block;
 }
-
-.new-chat-btn {
-    width: 100%;
-    height: 40px;
-    font-size: 14px;
-    font-weight: 500;
-    background-color: #3b82f6 !important;
-    border: none !important;
-    color: white !important;
-}
-
 .show-sidebar-btn {
     position: fixed;
     top: 20px;
@@ -200,129 +139,20 @@ footer {display: none !important}
     padding: 0 !important;
     border-radius: 50%;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    background-color: #374151 !important;
-    color: #f9fafb !important;
 }
-
-.chat-list {
-    padding: 8px 0;
-    max-height: calc(100vh - 140px);
-    overflow-y: auto;
-    background-color: #1f2937;
-}
-
-.chat-list-empty {
-    padding: 20px 16px;
-    text-align: center;
-    color: #9ca3af;
-    font-size: 14px;
-}
-
-.chat-item {
-    padding: 12px 16px;
-    cursor: pointer;
-    border-left: 3px solid transparent;
-    transition: all 0.2s ease;
-    margin: 2px 0;
-    background-color: #1f2937;
-}
-
-.chat-item:hover {
-    background-color: #374151;
-}
-
-.chat-item.active {
-    background-color: #1e3a8a;
-    border-left-color: #3b82f6;
-}
-
-.chat-title {
-    font-size: 14px;
-    font-weight: 500;
-    color: #f9fafb;
-    line-height: 1.4;
-    margin-bottom: 4px;
-    word-wrap: break-word;
-}
-
-.chat-timestamp {
-    font-size: 12px;
-    color: #9ca3af;
-}
-
 .main-content {
     flex: 1;
     padding: 0 1rem;
-    background-color: transparent;
 }
-
 .chat-container {
     max-width: 1200px;
     margin: 0 auto;
 }
-
-.dynamic-chatbot {
-    transition: height 0.3s ease-in-out;
-    border: 1px solid #374151;
-    border-radius: 8px;
-}
-
-.chatbot-container {
-    min-height: 150px;
-    max-height: 600px;
-}
-
-/* Scrollbar styling for chat list */
-.chat-list::-webkit-scrollbar {
-    width: 6px;
-}
-
-.chat-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.chat-list::-webkit-scrollbar-thumb {
-    background: #4b5563;
-    border-radius: 3px;
-}
-
-.chat-list::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
-}
 """
 
-# JavaScript for handling chat item clicks
-chat_click_js = """
-function(html_content) {
-    // Add click event listeners to chat items
-    setTimeout(() => {
-        const chatItems = document.querySelectorAll('.chat-item');
-        chatItems.forEach(item => {
-            item.addEventListener('click', function() {
-                const sessionId = this.getAttribute('data-session-id');
-                if (sessionId) {
-                    // Trigger the load_chat function through a hidden button
-                    const hiddenInput = document.querySelector('#hidden-session-input textarea');
-                    const hiddenButton = document.querySelector('#hidden-load-button');
-                    if (hiddenInput && hiddenButton) {
-                        hiddenInput.value = sessionId;
-                        hiddenButton.click();
-                    }
-                }
-            });
-        });
-    }, 100);
-    return html_content;
-}
-"""
-
-with gr.Blocks(title="Llama-Wizard", theme="soft", css=custom_css) as demo:
+with gr.Blocks(title="Kusco", theme="soft", css=custom_css) as demo:
     # State variables
     session_state = gr.State(value=None)
-    
-    # Hidden components for chat loading
-    hidden_session_input = gr.Textbox(visible=False, elem_id="hidden-session-input")
-    hidden_load_button = gr.Button(visible=False, elem_id="hidden-load-button")
     
     # Show sidebar button (when sidebar is hidden)
     show_btn = gr.Button("☰", size="sm", elem_classes="show-sidebar-btn", visible=False)
@@ -330,75 +160,74 @@ with gr.Blocks(title="Llama-Wizard", theme="soft", css=custom_css) as demo:
     with gr.Row():
         # Left sidebar
         with gr.Column(scale=1, elem_classes="sidebar") as sidebar:
-            with gr.Column(elem_classes="sidebar-header"):
-                hide_btn = gr.Button("← Hide Sidebar", size="sm", elem_classes="toggle-btn")
-                new_chat_btn = gr.Button("🗨️ New Chat", variant="secondary", size="sm", elem_classes="new-chat-btn")
+            hide_btn = gr.Button("←", size="sm", elem_classes="toggle-btn")
             
-            chat_list_display = gr.HTML(
-                value="<div class='chat-list-empty'>No conversations yet</div>",
-                elem_classes="chat-list-container"
+            new_chat_btn = gr.Button("🗨️ New Chat", variant="primary", size="lg")
+            
+            chat_dropdown = gr.Dropdown(
+                choices=[],
+                interactive=True,
+                elem_classes="chat-list",
+                show_label=False
             )
         
         # Main chat area
         with gr.Column(scale=3, elem_classes="main-content") as main_area:
             with gr.Column(elem_classes="chat-container"):
-                gr.Markdown("# 🦙 Llama-Wizard at your service!")
+                gr.Markdown("# 🦙 Kusco at your service!")
                 
                 chatbot = gr.Chatbot(
-                    label="Chat",
-                    height=300,
-                    show_copy_button=True,
-                    elem_classes="dynamic-chatbot"
+                    label="Chat History",
+                    height=500,
+                    show_copy_button=True
                 )
                 
                 msg = gr.Textbox(
-                    label=None, 
+                    label="How may I serve you?", 
                     placeholder="Type your question here...",
-                    lines=2,
-                    interactive=True
+                    lines=2
                 )
                 
                 with gr.Row():
                     submit_btn = gr.Button("Send", variant="primary")
+                    clear_btn = gr.Button("Clear", variant="secondary")
     
     # Event handlers
     def submit_message(message, history, session_id):
         if not message.strip():
-            return history, "", gr.update(), gr.update()
+            return history, "", update_chat_list()
         return chat_with_llama(message, history, session_id)
     
     # Message submission
     msg.submit(
         submit_message,
         inputs=[msg, chatbot, session_state],
-        outputs=[chatbot, msg, chat_list_display, chatbot]
+        outputs=[chatbot, msg, chat_dropdown]
     )
     
     submit_btn.click(
         submit_message,
         inputs=[msg, chatbot, session_state],
-        outputs=[chatbot, msg, chat_list_display, chatbot]
+        outputs=[chatbot, msg, chat_dropdown]
     )
     
     # New chat button
     new_chat_btn.click(
         new_chat,
-        outputs=[chatbot, session_state, chat_list_display, chatbot]
+        outputs=[chatbot, session_state, chat_dropdown]
     )
     
-    # Hidden button for loading chats (triggered by JavaScript)
-    hidden_load_button.click(
-        lambda session_id: load_chat_from_click(session_id),
-        inputs=[hidden_session_input],
-        outputs=[chatbot, session_state, chatbot, chat_list_display]
+    # Load chat session
+    chat_dropdown.change(
+        load_chat_session,
+        inputs=[chat_dropdown, session_state],
+        outputs=[chatbot, session_state]
     )
     
-    # Add JavaScript event handling for chat list
-    chat_list_display.change(
-        None,
-        inputs=[chat_list_display],
-        outputs=[chat_list_display],
-        js=chat_click_js
+    # Clear current chat
+    clear_btn.click(
+        lambda: ([], ""),
+        outputs=[chatbot, msg]
     )
     
     # Sidebar toggle functionality
@@ -415,7 +244,7 @@ with gr.Blocks(title="Llama-Wizard", theme="soft", css=custom_css) as demo:
     # Initialize with a new chat session
     demo.load(
         new_chat,
-        outputs=[chatbot, session_state, chat_list_display, chatbot]
+        outputs=[chatbot, session_state, chat_dropdown]
     )
 
 if __name__ == "__main__":

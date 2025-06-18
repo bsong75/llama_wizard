@@ -11,4 +11,4 @@ COPY . .
 # RUN chmod u+x app.py  
 EXPOSE 7860
 
-CMD [ "python","app_chatgpt.py" ]
+CMD [ "python","app_chatgpt_working.py" ]
